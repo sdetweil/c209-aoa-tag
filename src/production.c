@@ -15,6 +15,8 @@
  */
 
 #include "buttons.h"
+#include "bt_adv.h"
+#include "leds.h"
 
 #include <zephyr.h>
 #include <device.h>
@@ -34,9 +36,10 @@
 #include "version_config.h"
 #include <logging/log.h>
 
+
 LOG_MODULE_REGISTER(production, CONFIG_APPLICATION_MODULE_LOG_LEVEL);
 
-
+#define NUM_ADV_INTERVALS       3
 #define THREAD_STACKSIZE       1024
 #define THREAD_PRIORITY        7
 
@@ -52,10 +55,31 @@ LOG_MODULE_REGISTER(production, CONFIG_APPLICATION_MODULE_LOG_LEVEL);
 #define OK_STR          "\r\nOK\r\n"
 #define ERROR_STR       "\r\nERROR\r\n"
 
+#define GET_MAC_COMMAND "AT+UMLA=1"
+#define GET_MAC_COMMAND_LENGTH 9
+#define GET_ORIGINAL_NAMESPACE_COMMAND "AT+GMM"
+#define GET_ORIGINAL_NAMESPACE_COMMAND_LENGTH 6
+#define GET_NAMESPACE_COMMAND "AT+GNS"
+#define GET_NAMESPACE_COMMAND_LENGTH 6
+#define GET_INSTANCE_COMMAND "AT+GIN"
+#define GET_INSTANCE_COMMAND_LENGTH 6
+#define ID_COMMAND "AT+ID="
+#define ID_COMMAND_LENGTH 6
+#define ADV_COMMAND "AT+ADV="
+#define ADV_COMMAND_LENGTH 7
+#define MIN_LED_ADV_IND_MS      20
+#define FULL_ID_LENGTH_ASCII ID_COMMAND_LENGTH+EDDYSTONE_NAMESPACE_LENGTH+EDDYSTONE_INSTANCE_ID_LEN
+// double size for hex, but only once for the actual command text (AT+ID=)
+#define FULL_ID_LENGTH_HEX ((FULL_ID_LENGTH_ASCII)*2)-ID_COMMAND_LENGTH
+
+#define EDDYSTONE_NAMESPACE_LENGTH_HEX EDDYSTONE_NAMESPACE_LENGTH*2
+#define EDDYSTONE_INSTANCE_ID_LEN_HEX EDDYSTONE_INSTANCE_ID_LEN*2
+
+
 K_THREAD_STACK_DEFINE(threadStack, THREAD_STACKSIZE);
 
 static void resetParser(void);
-static void sendString(char* str);
+void sendString(char* str);
 
 static bool testLis2dw(void);
 static bool testBme280(void);
@@ -64,16 +88,26 @@ static bool testApds(void);
 static void uartCallback(const struct device *dev, struct uart_event *evt, void *user_data);
 static void handleCommand(struct k_work *work);
 
-static void disableProdModeTimerCallback(struct k_timer *unused);
-void disableProductionMode(struct k_work *item);
+//static void disableProdModeTimerCallback(struct k_timer *unused);
+//void disableProductionMode(struct k_work *item);
 
 static uint8_t uartRxBuf[UART_RX_BUF_NUM][UART_RX_LEN];
 static uint8_t *pNextUartBuf = uartRxBuf[1];
 
+extern bool isAdvRunning;
 static uint8_t atBuf[AT_MAX_CMD_LEN];
 static size_t atBufLen;
 static struct k_work handleCommandWork;
-static struct k_work genericWork;
+//static struct k_work genericWork;
+extern uint8_t pDefaultGroupNamespace[EDDYSTONE_NAMESPACE_LENGTH];
+extern uint8_t uuid[EDDYSTONE_INSTANCE_ID_LEN];
+
+int sscanf(char*, char *,int *);
+
+static uint16_t advIntervals[NUM_ADV_INTERVALS] = {20, 100, 1000};
+static uint8_t advIntervalIndex = 0;
+extern struct k_timer blinkTimer;
+int8_t txPower = 0;
 
 static const struct device *pUartDev;
 
@@ -85,7 +119,7 @@ static const struct uart_config uart_cfg = {
     .flow_ctrl = UART_CFG_FLOW_CTRL_NONE
 };
 
-K_TIMER_DEFINE(disableProdModeTimer, disableProdModeTimerCallback, NULL);
+//K_TIMER_DEFINE(disableProdModeTimer, disableProdModeTimerCallback, NULL);
 
 int productionStart(void)
 {
@@ -131,14 +165,13 @@ int productionStart(void)
 
     if (err == 0) {
         k_work_init(&handleCommandWork, handleCommand);
-        k_work_init(&genericWork, disableProductionMode);
-        k_timer_start(&disableProdModeTimer, K_SECONDS(10), K_NO_WAIT);
+        // don't turn off UART 
+        //k_work_init(&genericWork, disableProductionMode);
+        // k_timer_start(&disableProdModeTimer, K_SECONDS(10), K_NO_WAIT);
     }
-
-
     return err;
 }
-
+/*
 void disableProductionMode(struct k_work *item)
 {
     int err;
@@ -159,7 +192,7 @@ static void disableProdModeTimerCallback(struct k_timer *unused)
     // Cannot disable inside of an ISR
     k_work_submit(&genericWork);
 }
-
+*/
 static void uartRxHandler(uint8_t character)
 {
     if (character == '\r' || atBufLen > AT_MAX_CMD_LEN) {
@@ -199,7 +232,18 @@ static int validTxPowers(long txPower)
 
     return error;
 }
-
+unsigned char hex_char_to_bin(char c)
+{
+    if(c>='0' && c<='9')
+      return (char) (c & '\x0f');
+    else{
+      return (char) ((c & '\x0f') + 9);
+    }
+}
+const unsigned char nibbles(char a, char b){
+  char x=hex_char_to_bin(a)<<4;
+    return x|hex_char_to_bin(b);
+}
 static void handleCommand(struct k_work *work)
 {    
     int err;
@@ -216,7 +260,7 @@ static void handleCommand(struct k_work *work)
         sprintf(outBuf, "\r\n\"%s\",\"%s\"\r\n", getGitSha(), getBuildTime());
         sendString(outBuf);
         sendString("OK\r\n");
-    } else if (strncmp("AT+UMLA=1", atBuf, 9) == 0 && commandLen == 9) {
+    } else if (strncmp(GET_MAC_COMMAND, atBuf, GET_MAC_COMMAND_LENGTH) == 0 && commandLen == GET_MAC_COMMAND_LENGTH) {
         bt_addr_le_t addr;
         char macHex[MAC_ADDR_LEN * 2 + 1];
         uint8_t macSwapped[MAC_ADDR_LEN];
@@ -259,8 +303,17 @@ static void handleCommand(struct k_work *work)
         }
     } else if (strncmp("AT", atBuf, 2) == 0 && commandLen == 2) {
         sendString(OK_STR);
-    } else if (strncmp("AT+GMM", atBuf, 6) == 0 && commandLen == 6) {
-        sendString("\r\n\"NINA-B4-TAG\"\r\n");
+    } else if (strncmp(GET_NAMESPACE_COMMAND, atBuf, GET_NAMESPACE_COMMAND_LENGTH) == 0 && commandLen == GET_NAMESPACE_COMMAND_LENGTH ) {
+        sprintf(outBuf, "\r\n+namespace:%*s==\r\n",EDDYSTONE_NAMESPACE_LENGTH, pDefaultGroupNamespace);
+        sendString(outBuf);
+        sendString("OK\r\n");
+    } else if (strncmp(GET_INSTANCE_COMMAND, atBuf, GET_INSTANCE_COMMAND_LENGTH) == 0 && commandLen == GET_INSTANCE_COMMAND_LENGTH ) {
+        sprintf(outBuf, "\r\n+instance:%*s--",EDDYSTONE_INSTANCE_ID_LEN, uuid);
+        sendString(outBuf);
+        sendString("OK\r\n");
+    } else if (strncmp(GET_ORIGINAL_NAMESPACE_COMMAND, atBuf, GET_ORIGINAL_NAMESPACE_COMMAND_LENGTH) == 0 && commandLen == GET_ORIGINAL_NAMESPACE_COMMAND_LENGTH ) {
+        sprintf(outBuf, "\r\n+namespace:%*s--",EDDYSTONE_NAMESPACE_LENGTH, pDefaultGroupNamespace);
+        sendString(outBuf);
         sendString("OK\r\n");
     } else if (strncmp("AT+CPWROFF", atBuf, 10) == 0 && commandLen == 10) {
         sendString(OK_STR);
@@ -276,14 +329,104 @@ static void handleCommand(struct k_work *work)
             validCommand = false;
             sendString(ERROR_STR);
         }
+    } else if (strncmp("AT+TXRATE=", atBuf, 10) == 0 && commandLen > 10) {
+        errno = 0;
+        long rate = strtol(&atBuf[10], NULL, 10);
+        if (errno == 0 ) {
+          if(isAdvRunning== false){
+            //storageWriteTxRate(rate);
+            btAdvUpdateAdvInterval(rate,rate);
+            advIntervals[advIntervalIndex]=rate;
+            sendString(OK_STR);
+          } else {
+            sendString(ERROR_STR);
+          }
+        } else {
+          validCommand = false;
+          sendString(ERROR_STR);
+        }
+    } else if (strncmp( ADV_COMMAND, atBuf, ADV_COMMAND_LENGTH) == 0 && commandLen > ADV_COMMAND_LENGTH) {
+        errno = 0;
+        long advstate  = strtol(&atBuf[ADV_COMMAND_LENGTH], NULL, 10);
+        if (errno == 0 && (advstate == 0 || advstate ==1 )) {
+            if ( advstate == 0 ) {
+              if(isAdvRunning== true){
+                btAdvStop();                
+                ledsSetState(LED_BLUE, 0);
+                k_sleep(K_MSEC(MIN_LED_ADV_IND_MS));
+                ledsSetState(LED_BLUE, 1);
+                k_timer_start(&blinkTimer, K_MSEC(advIntervals[advIntervalIndex]), K_NO_WAIT);
+                isAdvRunning=false;
+              } else {
+                  sendString(ERROR_STR);
+              }
+            } else {
+                btAdvStart();
+                isAdvRunning=true;
+            }
+            //CONFID-NAV
+            //434f4e4649442d4e4156
+            //AT+UDFFILT=1,2,"434f4e4649442d4e4156"\r
+            sendString(OK_STR);
+        } else {
+            validCommand = false;
+            sendString(ERROR_STR);
+        }
+
+    } else if (strncmp(ID_COMMAND, atBuf, ID_COMMAND_LENGTH) == 0){
+       if(isAdvRunning==false){
+         if(commandLen == FULL_ID_LENGTH_ASCII || commandLen == FULL_ID_LENGTH_HEX ) {
+          // local buffer
+          //sendString(OK_STR);
+          unsigned char buff[FULL_ID_LENGTH_HEX+1];
+          //AT+ID=434f4e4649442d4e6132313233343536
+          memset(buff,0,sizeof(buff));
+          // if the command is in ascii chars
+          if(commandLen == FULL_ID_LENGTH_HEX){
+          // get data length
+
+            // skip over command text
+            for (int i = 0, j = ID_COMMAND_LENGTH; j < commandLen; j +=2) {
+              // convert each pair of text chars to one byte
+              buff[i++] = nibbles(atBuf[j], atBuf[j+1]);            
+            }
+
+          } else {
+            // string in text chars, copy just the data
+            memcpy(buff, atBuf+ID_COMMAND_LENGTH,commandLen-ID_COMMAND_LENGTH);
+            sendString("\r\n--");
+            sendString(buff);
+            sendString("--\r\n");
+          }
+
+          // copy namespace and instance info to local variables
+          memcpy(pDefaultGroupNamespace, buff, EDDYSTONE_NAMESPACE_LENGTH);
+          memcpy(uuid, buff+EDDYSTONE_NAMESPACE_LENGTH, EDDYSTONE_INSTANCE_ID_LEN);
+          // save namespace and instance info to nv storage
+          storageWriteNameSpace(pDefaultGroupNamespace, EDDYSTONE_NAMESPACE_LENGTH);
+          storageWriteInstanceID(uuid,EDDYSTONE_INSTANCE_ID_LEN);
+          // get the saved transmit power setting
+          storageGetTxPower(&txPower);
+          btAdvInit(advIntervals[advIntervalIndex], advIntervals[advIntervalIndex], pDefaultGroupNamespace , uuid, txPower);
+          sendString(OK_STR);
+       } else {
+         char ss[30];
+         sprintf(ss,"max=%i actual=%i\r\n%s\r\n", FULL_ID_LENGTH_HEX,commandLen,"\r\nbad length\r\n");
+         sendString(ss);
+        }
+      } else {
+      // can't change while actively advertising
+         sendString("\r\nAdvertising\r\n");
+         sendString(ERROR_STR);
+      }
     } else {
         validCommand = false;
         sendString(ERROR_STR);
     }
 
-    if (validCommand) {
-        k_timer_stop(&disableProdModeTimer);
-    }
+    //if (validCommand) {
+    //    k_timer_stop(&disableProdModeTimer);
+    //}
 
     resetParser();
 
@@ -341,7 +484,7 @@ static void resetParser(void)
     atBufLen = 0;
 }
 
-static void sendString(char* str)
+void sendString(char* str)
 {
     for (int i = 0; i < strlen(str); i++) {
         uart_poll_out(pUartDev, str[i]);

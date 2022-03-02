@@ -22,6 +22,7 @@
 
 LOG_MODULE_REGISTER(bt_adv, CONFIG_APPLICATION_MODULE_LOG_LEVEL);
 
+extern bool isAdvRunning;
 static uint16_t minAdvInterval;
 static uint16_t maxAdvInterval;
 
@@ -45,10 +46,13 @@ static struct bt_data ad[] = {
 };
 
 void btAdvInit(uint16_t min_int, uint16_t max_int, uint8_t* namespace, uint8_t* instance_id, int8_t txPower) {
+    if( min_int == max_int){
+      max_int++;
+    }
     minAdvInterval = min_int / 0.625;
     maxAdvInterval = max_int / 0.625;
 
-    memcpy((uint8_t*)&ad[2].data[ADV_DATA_OFFSET_NAMESPACE], namespace, EDDYSTONE_NAMESPACE_LENGFTH);
+    memcpy((uint8_t*)&ad[2].data[ADV_DATA_OFFSET_NAMESPACE], namespace, EDDYSTONE_NAMESPACE_LENGTH);
     memcpy((uint8_t*)&ad[2].data[ADV_DATA_OFFSET_INSTANCE], instance_id, EDDYSTONE_INSTANCE_ID_LEN);
     memcpy((uint8_t*)&ad[2].data[ADV_DATA_OFFSET_TX_POWER], &txPower, sizeof(txPower));
 }
@@ -67,12 +71,17 @@ void btAdvStop(void) {
     LOG_INF("Adv stopped");
 }
 
-void btAdvUpdateAdvInterval(uint16_t min, uint16_t max) {
-    minAdvInterval = min / 0.625;
-    maxAdvInterval = max / 0.625;
-    int err = bt_le_adv_stop();
-    if (err) {
-        LOG_ERR("Failed stopping adv when changing adv interval: %d", err);
+void btAdvUpdateAdvInterval(uint16_t min_int, uint16_t max_int) {
+    if( min_int == max_int){
+      max_int++;
     }
-    btAdvStart();
+    minAdvInterval = min_int / 0.625;
+    maxAdvInterval = max_int / 0.625;
+    if(isAdvRunning){
+      int err = bt_le_adv_stop();
+      if (err) {
+          LOG_ERR("Failed stopping adv when changing adv interval: %d", err);
+      }
+      btAdvStart();
+    }
 }
