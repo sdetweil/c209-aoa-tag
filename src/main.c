@@ -129,10 +129,10 @@ static void btReadyCb(int err)
     buttonsInit(&onButtonPressCb);
     storageGetNameSpace(pDefaultGroupNamespace, sizeof(pDefaultGroupNamespace));
     storageGetInstanceID(uuid, sizeof(uuid));
-    sprintf(tbuf,"ns=%*s--",sizeof(pDefaultGroupNamespace),pDefaultGroupNamespace);
-    sendString(tbuf);
+    //sprintf(tbuf,"ns=%*s--",sizeof(pDefaultGroupNamespace),pDefaultGroupNamespace);
+    //sendString(tbuf);
     btAdvInit(advIntervals[advIntervalIndex], advIntervals[advIntervalIndex], pDefaultGroupNamespace, uuid, txPower);
-    btAdvStart();
+   // btAdvStart();
 }
 
 static void onButtonPressCb(buttonPressType_t type) {
