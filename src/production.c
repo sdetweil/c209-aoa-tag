@@ -195,7 +195,7 @@ static void disableProdModeTimerCallback(struct k_timer *unused)
 */
 static void uartRxHandler(uint8_t character)
 {
-    if (character == '\r' || atBufLen > AT_MAX_CMD_LEN) {
+    if (character == '\r'||character == '\n') || atBufLen > AT_MAX_CMD_LEN) {
         uart_rx_disable(pUartDev);
         k_work_submit(&handleCommandWork);
     } else {
@@ -357,9 +357,7 @@ static void handleCommand(struct k_work *work)
                 ledsSetState(LED_BLUE, 1);
                 k_timer_start(&blinkTimer, K_MSEC(advIntervals[advIntervalIndex]), K_NO_WAIT);
                 isAdvRunning=false;
-              } else {
-                  sendString(ERROR_STR);
-              }
+              } 
             } else {
                 btAdvStart();
                 isAdvRunning=true;
@@ -410,9 +408,10 @@ static void handleCommand(struct k_work *work)
           btAdvInit(advIntervals[advIntervalIndex], advIntervals[advIntervalIndex], pDefaultGroupNamespace , uuid, txPower);
           sendString(OK_STR);
        } else {
-         char ss[30];
-         sprintf(ss,"max=%i actual=%i\r\n%s\r\n", FULL_ID_LENGTH_HEX,commandLen,"\r\nbad length\r\n");
+         char ss[50];
+         sprintf(ss,"max=%i or %i actual=%i\r\n%s='%s'\r\n", FULL_ID_LENGTH_HEX,FULL_ID_LENGTH_ASCII,commandLen, "\r\nbad length\r\n", atBuf);
          sendString(ss);
+         sendString(ERROR_STR);
         }
       } else {
       // can't change while actively advertising
