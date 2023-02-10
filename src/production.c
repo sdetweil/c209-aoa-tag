@@ -93,7 +93,7 @@ static void handleCommand(struct k_work *work);
 
 static uint8_t uartRxBuf[UART_RX_BUF_NUM][UART_RX_LEN];
 static uint8_t *pNextUartBuf = uartRxBuf[1];
-
+extern void setPower( int8_t txPwrLvl);
 extern bool isAdvRunning;
 static uint8_t atBuf[AT_MAX_CMD_LEN];
 static size_t atBufLen;
@@ -195,7 +195,7 @@ static void disableProdModeTimerCallback(struct k_timer *unused)
 */
 static void uartRxHandler(uint8_t character)
 {
-    if (character == '\r'||character == '\n') || atBufLen > AT_MAX_CMD_LEN) {
+    if( (character == '\r'|| character == '\n') || atBufLen > AT_MAX_CMD_LEN) {
         uart_rx_disable(pUartDev);
         k_work_submit(&handleCommandWork);
     } else {
@@ -323,7 +323,9 @@ static void handleCommand(struct k_work *work)
         errno = 0;
         long power = strtol(&atBuf[9], NULL, 10);
         if (errno == 0 && validTxPowers(power) == 0) {
+            // save for power on
             storageWriteTxPower(power);
+            setPower(power);
             sendString(OK_STR);
         } else {
             validCommand = false;

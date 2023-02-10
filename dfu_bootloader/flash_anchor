@@ -1,0 +1,9 @@
+#!/bin/bash
+tty=$(ls /dev/tty.usbserial-D2*)
+zip1=$(find ~/Downloads -type f -name "*u-connectLocate_*.zip" -exec ls -1t "{}" + | head -1)
+unzip -o -q $zip1  >/dev/null
+zip2=$(find . -type f -name NINA*.zip -exec ls -1t "{}" + | head -1)
+unzip -o -q $zip2  >/dev/null
+image=$(find . -type f -name NINA*.bin -exec ls -1t "{}" + | head -1)
+#newtmgr --conntype=serial --connstring="$tty,baud=115200" reset
+newtmgr --conntype=serial --connstring="$tty,baud=115200" image upload $image

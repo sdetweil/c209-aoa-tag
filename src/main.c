@@ -57,8 +57,8 @@ extern int8_t txPower ;
 
 struct k_timer blinkTimer;
 static uint8_t bluetoothReady;
-uint8_t pDefaultGroupNamespace[EDDYSTONE_NAMESPACE_LENGTH] = "NINA-B4TAG";
-uint8_t uuid[EDDYSTONE_INSTANCE_ID_LEN];
+uint8_t pDefaultGroupNamespace[EDDYSTONE_NAMESPACE_LENGTH] = "testing_ns";// "NINA-B4TAG";
+uint8_t uuid[EDDYSTONE_INSTANCE_ID_LEN] ="220001";
 extern void sendString(char* str);
 
 K_THREAD_DEFINE(blinkThreadId, BLINK_STACKSIZE, blink, NULL, NULL, NULL, BLINK_PRIORITY, 0, K_TICKS_FOREVER);
@@ -115,16 +115,22 @@ static void blink(void) {
     }
 }
 
+
+void setPower(int8_t power){
+   setTxPower(BT_HCI_VS_LL_HANDLE_TYPE_ADV, 0, power);
+}
+
 static void btReadyCb(int err)
 {
-    unsigned char tbuf[40];
+    //unsigned char tbuf[40];
     __ASSERT(err == 0, "Bluetooth init failed (err %d)", err);
     LOG_INF("Bluetooth initialized");
     bluetoothReady = 1;
 
     storageGetTxPower(&txPower);
     LOG_INF("Setting TxPower: %d", txPower);
-    setTxPower(BT_HCI_VS_LL_HANDLE_TYPE_ADV, 0, txPower);
+    setPower(txPower);
+    //setTxPower(BT_HCI_VS_LL_HANDLE_TYPE_ADV, 0, txPower);
      
     buttonsInit(&onButtonPressCb);
     storageGetNameSpace(pDefaultGroupNamespace, sizeof(pDefaultGroupNamespace));
