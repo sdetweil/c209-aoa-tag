@@ -18,6 +18,7 @@
 #define __BT_ADV_H
 
 #include <zephyr.h>
+#include <bluetooth/bluetooth.h>
 
 #define EDDYSTONE_INSTANCE_ID_LEN   6
 #define EDDYSTONE_NAMESPACE_LENGFTH 10
@@ -32,7 +33,8 @@
  * @param   instance_id     Pointer to the instance ID to be sent in Eddystone beacon.
  * @param   txPower         The TX power put in advertising data
  */
-void btAdvInit(uint16_t min_int, uint16_t max_int, uint8_t* namespace, uint8_t* instance_id, int8_t txPower);
+void btAdvInit(uint16_t min_int, uint16_t max_int, uint8_t *namespace, uint8_t *instance_id,
+               int8_t txPower);
 
 /**
  * @brief   Start BT advertising
@@ -49,10 +51,23 @@ void btAdvStop(void);
 /**
  * @brief   Change the advertsing interval
  * @details Change the advertising interval, advertsing will be stopped and restarted with the new interval.
- * 
+ *
  * @param   min_int         Min adv. interval in milliseconds
  * @param   max_int         Max adv. interval in milliseconds
+ *
+ * @return                  True if success, false otherwise.
  */
-void btAdvUpdateAdvInterval(uint16_t min, uint16_t max);
+bool btAdvUpdateAdvInterval(uint16_t min, uint16_t max);
+
+/**
+ * @brief Set or update the periodic advertising data.
+ *
+ * Advertising must be initialized before calling.
+ *
+ * @param ad        Advertising data.
+ * @param ad_len    Advertising data length.
+ *
+ */
+void btAdvSetPerAdvData(struct bt_data *data, int len);
 
 #endif

@@ -14,10 +14,9 @@
 
 cmake_minimum_required(VERSION 3.13.1)
 
-list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/u-blox-sho-OpenCPU/zephyr)
 set(DTC_OVERLAY_FILE  "c209.overlay")
 
-set(CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/prj_base.conf)
+set(CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/prj.conf)
 if(DEFINED RELEASE)
   message("RELEASE BUILD")
   add_definitions("-DRELEASE=${RELEASE}")
@@ -28,18 +27,25 @@ else()
   list(APPEND CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/prj_debug.conf)
 endif()
 
+if(DEFINED NRF_DFU_BOOT_SUPPORT)
+message("NRF_DFU_BOOT_SUPPORT BUILD")
+add_definitions("-DNRF_DFU_BOOT_SUPPORT=${NRF_DFU_BOOT_SUPPORT}")
+list(APPEND CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/prj_dfu_boot.conf)
+endif()
 
 find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
 project(direction_finding_beacon)
 
 FILE(GLOB app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
+target_sources(app PRIVATE ubx_version.c)
 
 zephyr_library_include_directories(${ZEPHYR_BASE}/samples/bluetooth)
 
 # Get git commit and  build time and pass it to version_config.h
+
 execute_process(COMMAND
-  "${GIT_EXECUTABLE}" describe --always --dirty
+  git describe --always --dirty
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE GIT_SHA1
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)

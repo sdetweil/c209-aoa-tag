@@ -17,14 +17,14 @@
 #ifndef __LEDS_H
 #define __LEDS_H
 
-/** 
+/**
  * @brief LED specifier
  */
 typedef enum leds_t {
-  LED_RED = 0,
-  LED_GREEN,
-  LED_BLUE,
-  LED_LAST = LED_BLUE
+    LED_RED = 0,
+    LED_GREEN,
+    LED_BLUE,
+    LED_END
 } leds_t;
 
 

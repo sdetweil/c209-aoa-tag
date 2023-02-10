@@ -34,13 +34,19 @@ int storageInit(void)
     struct flash_pages_info info;
     int rc = 0;
     /* define the nvs file system by settings with:
-     *	sector_size equal to the pagesize,
-     *	starting at FLASH_AREA_OFFSET(storage)
+     *  sector_size equal to the pagesize,
+     *  starting at FLASH_AREA_OFFSET(storage)
      */
     fs.offset = FLASH_AREA_OFFSET(storage);
+    fs.flash_device = FLASH_AREA_DEVICE(storage);
+    if (!device_is_ready(fs.flash_device)) {
+        LOG_ERR("Flash device %s is not ready\n", fs.flash_device->name);
+        return -1;
+    }
+
     rc = flash_get_page_info_by_offs(
-            device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL),
-            fs.offset, &info);
+             fs.flash_device,
+             fs.offset, &info);
     if (rc) {
         LOG_ERR("Unable to get page info");
         return -1;
@@ -48,11 +54,11 @@ int storageInit(void)
     fs.sector_size = info.size;
     fs.sector_count = FLASH_AREA_SIZE(storage) / info.size;
 
-    rc = nvs_init(&fs, DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
+    rc = nvs_mount(&fs);
     if (rc) {
         LOG_ERR("Flash Init failed, trying to erase nvs flash sectors");
         if (flash_erase(fs.flash_device, fs.offset, fs.sector_size * fs.sector_count) == 0) {
-            rc = nvs_init(&fs, DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
+            rc = nvs_mount(&fs);
         } else {
             LOG_ERR("Flash erase failed after fail of init nvs");
         }
@@ -65,10 +71,11 @@ void storageWriteTxPower(int8_t power)
 {
     int ret;
     ret = nvs_write(&fs, TX_POWER_NVS_ID, &power, sizeof(int8_t));
-    __ASSERT(ret == sizeof(int8_t) || ret == 0, "nvs_write failed for ID: %d err: %d", TX_POWER_NVS_ID, ret);
+    __ASSERT(ret == sizeof(int8_t) ||
+             ret == 0, "nvs_write failed for ID: %d err: %d", TX_POWER_NVS_ID, ret);
 }
 
-void storageGetTxPower(int8_t* pPower)
+void storageGetTxPower(int8_t *pPower)
 {
     uint32_t nBytes;
 

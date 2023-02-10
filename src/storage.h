@@ -20,7 +20,7 @@
 
 /**
  * @brief   Init the NVS storage backend.
- * 
+ *
  * @return  0, if init was ok.
  * @return  negative error code, if init failed.
  */
@@ -38,6 +38,6 @@ void storageWriteTxPower(int8_t power);
  *
  * @param   power            pointer to store value in.
  */
-void storageGetTxPower(int8_t* pPower);
+void storageGetTxPower(int8_t *pPower);
 
 #endif
